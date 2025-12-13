@@ -1,0 +1,5 @@
+{
+  "name": "PackMaster 3D",
+  "description": "An intuitive, AI-assisted container loading visualizer that calculates optimal packing strategies and provides visual and text-based guides for non-technical users.",
+  "requestFramePermissions": []
+}
