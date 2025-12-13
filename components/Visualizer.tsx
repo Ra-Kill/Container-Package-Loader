@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PackingResult, PlacedItem, Dimensions } from '../types';
 import { toPng } from 'html-to-image';
 import JSZip from 'jszip';
@@ -64,6 +64,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ data }) => {
   const exportRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportLayerIndex, setExportLayerIndex] = useState(0);
 
   // Reset layer when data changes
   useEffect(() => {
@@ -139,8 +140,6 @@ const Visualizer: React.FC<VisualizerProps> = ({ data }) => {
           setExportLayerIndex(0);
       }
   };
-
-  const [exportLayerIndex, setExportLayerIndex] = useState(0);
 
   if (!data) {
       return (
@@ -284,8 +283,8 @@ const Visualizer: React.FC<VisualizerProps> = ({ data }) => {
                 })}
             </div>
             
-            {/* Context Legend Floating - Adjusted for Mobile */}
-            <div className="absolute bottom-4 md:bottom-8 bg-white/90 backdrop-blur-sm px-3 py-1.5 md:pl-2 md:pr-4 md:py-2 rounded-full shadow-lg border border-slate-200 flex gap-3 md:gap-6 text-[10px] md:text-xs font-bold text-slate-600 animate-in fade-in slide-in-from-bottom-4 pointer-events-none">
+            {/* Context Legend Floating - Adjusted for Mobile - ADDED Z-50 HERE */}
+            <div className="absolute bottom-4 md:bottom-8 bg-white/90 backdrop-blur-sm px-3 py-1.5 md:pl-2 md:pr-4 md:py-2 rounded-full shadow-lg border border-slate-200 flex gap-3 md:gap-6 text-[10px] md:text-xs font-bold text-slate-600 animate-in fade-in slide-in-from-bottom-4 pointer-events-none z-50">
                 <div className="flex items-center gap-1.5">
                     <span className="w-4 h-4 md:w-6 md:h-6 rounded-full bg-brand-500 border-2 border-white shadow-sm flex items-center justify-center text-[8px] md:text-[10px] text-white">★</span>
                     Load Now
