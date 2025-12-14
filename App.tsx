@@ -29,12 +29,10 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-screen bg-slate-100 flex flex-col md:flex-row overflow-hidden font-sans text-slate-900">
+    // FIX 1: Changed h-screen to h-dvh (Dynamic Viewport Height) to fix mobile browser bar issue
+    <div className="h-dvh w-screen bg-slate-100 flex flex-col md:flex-row overflow-hidden font-sans text-slate-900">
         
-        {/* LEFT PANEL: INPUT / SETUP 
-            - Hidden on Mobile if tab is 'view'
-            - Always visible on Desktop
-        */}
+        {/* LEFT PANEL: INPUT / SETUP */}
         <div className={`w-full md:w-96 shrink-0 h-full md:border-r border-slate-200 bg-white flex flex-col z-20 transition-all
             ${mobileTab === 'setup' ? 'flex' : 'hidden md:flex'}`}>
             
@@ -46,13 +44,14 @@ const App: React.FC = () => {
                 </span>
             </div>
 
-            <ControlPanel onCalculate={handleCalculate} isGenerating={isProcessing} />
+            {/* FIX 2: Wrapped ControlPanel in a scrollable div. 
+               This ensures the form scrolls INSIDE the screen, rather than pushing the bottom nav off. */}
+            <div className="flex-1 overflow-y-auto">
+                <ControlPanel onCalculate={handleCalculate} isGenerating={isProcessing} />
+            </div>
         </div>
 
-        {/* RIGHT PANEL: VISUALIZER
-            - Hidden on Mobile if tab is 'setup'
-            - Always visible on Desktop
-        */}
+        {/* RIGHT PANEL: VISUALIZER */}
         <div className={`flex-1 flex flex-col h-full relative bg-slate-100/50 
             ${mobileTab === 'view' ? 'flex' : 'hidden md:flex'}`}>
             
@@ -65,7 +64,6 @@ const App: React.FC = () => {
                     </div>
                     <h1 className="text-lg md:text-xl font-bold text-slate-800">PackMaster <span className="text-brand-600 font-light hidden sm:inline">Layer View</span></h1>
                 </div>
-                {/* Mobile: Simple status if needed */}
                 <div className="md:hidden text-xs font-bold text-slate-400">
                     {packingResult ? `${Math.round(packingResult.volumeUtilization)}% Full` : 'Empty'}
                 </div>
