@@ -46,12 +46,15 @@ const AnimatedBox = ({
     // Normalize size to fit nicely in the view while preserving Aspect Ratio
     const maxDim = Math.max(dims.l, dims.w, dims.h);
     const scale = 200 / maxDim; 
-    const l = dims.l * scale;
-    const w = dims.w * scale;
-    const h = dims.h * scale;
+    const l = dims.l * scale; // Scaled Depth
+    const w = dims.w * scale; // Scaled Width
+    const h = dims.h * scale; // Scaled Height
 
     const isLoaded = phase === 'load' || phase === '2d';
     
+    // Helper for text style
+    const labelStyle = "text-white font-bold drop-shadow-md text-sm md:text-lg tabular-nums tracking-tight flex items-center justify-center h-full w-full";
+
     const boxStyle: React.CSSProperties = {
         width: w, height: h,
         marginLeft: -w/2, marginTop: -h/2,
@@ -67,28 +70,41 @@ const AnimatedBox = ({
 
     return (
         <div className="absolute top-1/2 left-1/2" style={boxStyle}>
-            {/* Front */}
+            {/* Front Face (Width x Height) */}
             <div className="absolute flex items-center justify-center border-2 border-white/40 shadow-inner backface-visible"
                  style={{ width: w, height: h, backgroundColor: color, transform: `translateZ(${l/2}px)` }}>
-                 <div className="w-2 h-2 rounded-full bg-white/50"></div>
+                 <span className={labelStyle}>{dims.w}×{dims.h}</span>
             </div>
-            {/* Back */}
-            <div className="absolute border border-white/20 backface-visible"
-                 style={{ width: w, height: h, backgroundColor: color, filter: 'brightness(60%)', transform: `rotateY(180deg) translateZ(${l/2}px)` }} />
-            {/* Right */}
+
+            {/* Back Face (Width x Height) - Flipped */}
+            <div className="absolute border border-white/20 backface-visible flex items-center justify-center"
+                 style={{ width: w, height: h, backgroundColor: color, filter: 'brightness(60%)', transform: `rotateY(180deg) translateZ(${l/2}px)` }}>
+                 {/* Text is mirrored on back unless we flip it inside, but usually back is hidden. We can hide text or flip it. */}
+            </div>
+
+            {/* Right Face (Length x Height) */}
             <div className="absolute border border-white/20 flex items-center justify-center backface-visible"
                  style={{ width: l, height: h, left: (w-l)/2, backgroundColor: color, filter: 'brightness(80%)', transform: `rotateY(90deg) translateZ(${w/2}px)` }}>
+                 <span className={labelStyle}>{dims.l}×{dims.h}</span>
             </div>
-            {/* Left */}
-            <div className="absolute border border-white/20 backface-visible"
-                 style={{ width: l, height: h, left: (w-l)/2, backgroundColor: color, filter: 'brightness(80%)', transform: `rotateY(-90deg) translateZ(${w/2}px)` }} />
-            {/* Top */}
+
+            {/* Left Face (Length x Height) */}
+            <div className="absolute border border-white/20 backface-visible flex items-center justify-center"
+                 style={{ width: l, height: h, left: (w-l)/2, backgroundColor: color, filter: 'brightness(80%)', transform: `rotateY(-90deg) translateZ(${w/2}px)` }}>
+                 <span className={labelStyle}>{dims.l}×{dims.h}</span>
+            </div>
+
+            {/* Top Face (Width x Length) */}
             <div className="absolute border border-white/20 flex items-center justify-center backface-visible"
                  style={{ width: w, height: l, top: (h-l)/2, backgroundColor: color, filter: 'brightness(110%)', transform: `rotateX(90deg) translateZ(${h/2}px)` }}>
+                 <span className={labelStyle}>{dims.w}×{dims.l}</span>
             </div>
-            {/* Bottom */}
-            <div className="absolute border border-white/20 backface-visible"
-                 style={{ width: w, height: l, top: (h-l)/2, backgroundColor: color, filter: 'brightness(40%)', transform: `rotateX(-90deg) translateZ(${h/2}px)` }} />
+
+            {/* Bottom Face (Width x Length) */}
+            <div className="absolute border border-white/20 backface-visible flex items-center justify-center"
+                 style={{ width: w, height: l, top: (h-l)/2, backgroundColor: color, filter: 'brightness(40%)', transform: `rotateX(-90deg) translateZ(${h/2}px)` }}>
+                 <span className={labelStyle}>{dims.w}×{dims.l}</span>
+            </div>
         </div>
     );
 };
