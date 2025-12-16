@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ControlPanel from './components/ControlPanel';
 import Visualizer from './components/Visualizer';
 import { calculatePacking } from './services/packingService';
-import { PackingInput, PackingResult } from './types';
+import { PackingInput, PackingResult } from '../types';
 
 const App: React.FC = () => {
   const [packingResult, setPackingResult] = useState<PackingResult | null>(null);
