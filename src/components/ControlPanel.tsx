@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { PackingInput, PackageType, Unit } from '../types';
-import { OrientationGuide } from './OrientationGuide';
 
 interface ControlPanelProps {
   onCalculate: (input: PackingInput) => void;
   isGenerating: boolean;
+  onShowGuide: (pkg: PackageType) => void;
 }
 
 // Extended Palette
@@ -14,7 +14,7 @@ const PALETTE = [
   '#f43f5e', '#ec4899'
 ];
 
-const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating }) => {
+const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, onShowGuide }) => {
   const [container, setContainer] = useState({ length: '6', width: '2.4', height: '2.4' });
   const [containerUnit, setContainerUnit] = useState<Unit>('m');
 
@@ -26,9 +26,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating }
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newPkg, setNewPkg] = useState({ length: '40', width: '30', height: '30', qty: '', name: '' });
   const [pkgUnit, setPkgUnit] = useState<Unit>('cm');
-
-  // Modal State
-  const [viewingGuide, setViewingGuide] = useState<PackageType | null>(null);
 
   const convertToCm = (val: number, unit: Unit) => {
     if (unit === 'm') return val * 100;
@@ -233,7 +230,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating }
                                     {(!p.quantity || p.quantity === 0) ? "FILL" : `x${p.quantity}`}
                                 </span>
                                 <button 
-                                    onClick={() => setViewingGuide(p)}
+                                    onClick={() => onShowGuide(p)}
                                     className="text-[9px] font-bold text-brand-600 flex items-center gap-1 hover:underline whitespace-nowrap"
                                 >
                                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -273,11 +270,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating }
           </button>
       </div>
     </div>
-    
-    {/* Render Modal if viewingGuide is set */}
-    {viewingGuide && (
-        <OrientationGuide pkg={viewingGuide} onClose={() => setViewingGuide(null)} />
-    )}
     </>
   );
 };

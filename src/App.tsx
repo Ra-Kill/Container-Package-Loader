@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import ControlPanel from './components/ControlPanel';
 import Visualizer from './components/Visualizer';
 import { calculatePacking } from './services/packingService';
-import { PackingInput, PackingResult } from '../types';
+import { PackingInput, PackingResult, PackageType } from './types';
+import { OrientationGuide } from './components/OrientationGuide';
 
 const App: React.FC = () => {
   const [packingResult, setPackingResult] = useState<PackingResult | null>(null);
@@ -10,9 +11,16 @@ const App: React.FC = () => {
   // Mobile Tab State: 'setup' (Input) or 'view' (Visualizer)
   const [mobileTab, setMobileTab] = useState<'setup' | 'view'>('setup');
 
+  // NEW: State for the Guide and Reference to all packages
+  const [viewingGuide, setViewingGuide] = useState<PackageType | null>(null);
+  const [allPackages, setAllPackages] = useState<PackageType[]>([]);
+
   const handleCalculate = async (input: PackingInput) => {
     setIsProcessing(true);
     
+    // Store the packages so we can look them up later when clicking a box
+    setAllPackages(input.packages);
+
     // Simulate async for UI feedback
     setTimeout(() => {
         try {
@@ -26,6 +34,19 @@ const App: React.FC = () => {
             setIsProcessing(false);
         }
     }, 100);
+  };
+
+  // NEW: Handle clicking a box in the Visualizer
+  const handleVisualizerClick = (packageId: string) => {
+    // Strip the "-x" suffix if we added one for finite items (e.g. "pkg1-0" -> "pkg1")
+    // Note: In your packingService, IDs might be "id-index". 
+    // We check exact match first, then base match.
+    const originalPkg = allPackages.find(p => p.id === packageId) 
+                     || allPackages.find(p => packageId.startsWith(p.id + '-'));
+
+    if (originalPkg) {
+        setViewingGuide(originalPkg);
+    }
   };
 
   return (
@@ -47,7 +68,11 @@ const App: React.FC = () => {
             {/* FIX 2: Wrapped ControlPanel in a scrollable div. 
                This ensures the form scrolls INSIDE the screen, rather than pushing the bottom nav off. */}
             <div className="flex-1 overflow-y-auto">
-                <ControlPanel onCalculate={handleCalculate} isGenerating={isProcessing} />
+                <ControlPanel 
+                    onCalculate={handleCalculate} 
+                    isGenerating={isProcessing} 
+                    onShowGuide={setViewingGuide} 
+                />
             </div>
         </div>
 
@@ -70,7 +95,10 @@ const App: React.FC = () => {
             </header>
             
             <main className="flex-1 relative overflow-hidden flex flex-col">
-                <Visualizer data={packingResult} />
+                <Visualizer 
+                    data={packingResult} 
+                    onPackageClick={handleVisualizerClick}
+                />
             </main>
         </div>
 
@@ -92,6 +120,11 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-bold mt-1 uppercase tracking-wide">Visuals</span>
             </button>
         </div>
+
+        {/* Global Modal Render */}
+        {viewingGuide && (
+            <OrientationGuide pkg={viewingGuide} onClose={() => setViewingGuide(null)} />
+        )}
     </div>
   );
 };

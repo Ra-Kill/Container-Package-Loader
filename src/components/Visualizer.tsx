@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 
 interface VisualizerProps {
   data: PackingResult | null;
+  onPackageClick?: (id: string) => void;
 }
 
 // Helper Component for Offscreen Rendering
@@ -58,7 +59,7 @@ const ExportLayer = React.forwardRef<HTMLDivElement, { items: PlacedItem[], dims
     }
 );
 
-const Visualizer: React.FC<VisualizerProps> = ({ data }) => {
+const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
   const [currentLayerIndex, setCurrentLayerIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -250,7 +251,9 @@ const Visualizer: React.FC<VisualizerProps> = ({ data }) => {
                     return (
                         <div
                             key={i}
-                            className={`absolute flex items-center justify-center transition-all duration-300 border-box
+                            // UPDATED: Added onClick to open guide
+                            onClick={() => onPackageClick && onPackageClick(item.packageId)}
+                            className={`absolute flex items-center justify-center transition-all duration-300 border-box cursor-pointer hover:brightness-110 hover:ring-2 hover:ring-white/50
                                 ${isNew ? 'z-10 shadow-lg' : 'z-0 opacity-25 grayscale brightness-50'}`}
                             style={{
                                 left: `${(item.x / containerDimensions.width) * 100}%`,
