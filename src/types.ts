@@ -1,4 +1,4 @@
-export type Unit = 'm' | 'cm' | 'ft' | 'in';
+export type Unit = 'm' | 'cm' | 'ft' | 'in' | 'mm';
 
 export interface Dimensions {
   length: number;

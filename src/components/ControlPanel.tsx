@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PackingInput, PackageType, Unit } from '../types';
 
 interface ControlPanelProps {
@@ -28,6 +28,52 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
       length: '40', width: '30', height: '30', qty: '', name: '', keepUpright: false 
   });
   const [pkgUnit, setPkgUnit] = useState<Unit>('cm');
+  const [showCopiedToast, setShowCopiedToast] = useState(false);
+
+  // --- NEW: AUTO-LOAD CONFIG FROM URL ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const configData = params.get('config');
+    
+    if (configData) {
+        try {
+            // Decode Base64 -> JSON -> State
+            const decoded = atob(configData);
+            const data = JSON.parse(decoded);
+            
+            if (data.container) setContainer(data.container);
+            if (data.containerUnit) setContainerUnit(data.containerUnit);
+            if (data.packages) setPackages(data.packages);
+            
+            // Clean URL without refreshing to keep it neat
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (e) {
+            console.error("Failed to load config from URL", e);
+        }
+    }
+  }, []);
+
+  // --- NEW: GENERATE SHARE LINK ---
+  const handleShare = () => {
+      const data = {
+          container,
+          containerUnit,
+          packages
+      };
+      
+      try {
+          // JSON -> Base64
+          const stringified = JSON.stringify(data);
+          const encoded = btoa(stringified);
+          const url = `${window.location.origin}${window.location.pathname}?config=${encoded}`;
+          
+          navigator.clipboard.writeText(url);
+          setShowCopiedToast(true);
+          setTimeout(() => setShowCopiedToast(false), 3000);
+      } catch (e) {
+          alert("Configuration too large to share via URL.");
+      }
+  };
 
   const convertToCm = (val: number, unit: Unit) => {
     if (unit === 'm') return val * 100;
@@ -141,7 +187,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
 
   return (
     <>
-    <div className="bg-white flex flex-col h-full border-r border-slate-200 shadow-xl z-20 w-full">
+    <div className="bg-white flex flex-col h-full border-r border-slate-200 shadow-xl z-20 w-full relative">
+      
+      {/* Toast Notification */}
+      {showCopiedToast && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg z-50 animate-in fade-in slide-in-from-top-2">
+              Link Copied to Clipboard!
+          </div>
+      )}
+
       <div className="p-5 border-b border-slate-100 bg-slate-50">
         <div className="flex justify-between items-center mb-3">
              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">1. Container</h2>
@@ -210,7 +264,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                 </div>
              </div>
              
-             {/* --- NEW: QTY + KEEP UPRIGHT ROW --- */}
              <div className="flex items-end gap-3 mb-1">
                 <div className="flex-1">
                     <label className="text-[10px] uppercase text-slate-400 font-bold">Qty (Optional)</label>
@@ -296,16 +349,26 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
         </div>
       </div>
 
-      <div className="p-5 border-t border-slate-200 bg-white">
+      <div className="p-5 border-t border-slate-200 bg-white grid grid-cols-2 gap-2">
+          {/* Share Button */}
+          <button 
+            onClick={handleShare}
+            className="col-span-2 md:col-span-1 py-4 px-4 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all text-sm flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+            Share Config
+          </button>
+
+          {/* Calculate Button */}
           <button 
             onClick={handleCalculate}
             disabled={isGenerating || packages.length === 0 || !!editingId}
-            className={`w-full py-4 px-4 rounded-xl font-bold text-white shadow-lg transition-all text-lg flex items-center justify-center gap-2
+            className={`col-span-2 md:col-span-1 py-4 px-4 rounded-xl font-bold text-white shadow-lg transition-all text-sm md:text-base flex items-center justify-center gap-2
                 ${isGenerating || packages.length === 0 || !!editingId
                     ? 'bg-slate-300 cursor-not-allowed text-slate-500' 
                     : 'bg-slate-900 hover:bg-slate-800 active:scale-95'}`}
           >
-            {isGenerating ? 'Processing...' : 'Generate Load Plan'}
+            {isGenerating ? 'Processing...' : 'Generate Plan'}
           </button>
       </div>
     </div>
