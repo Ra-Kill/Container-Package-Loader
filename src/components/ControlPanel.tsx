@@ -15,16 +15,18 @@ const PALETTE = [
 ];
 
 const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, onShowGuide }) => {
-  const [container, setContainer] = useState({ length: '6', width: '2.4', height: '2.4' });
+  const [container, setContainer] = useState({ length: '5.9', width: '2.35', height: '2.39' });
   const [containerUnit, setContainerUnit] = useState<Unit>('m');
 
   const [packages, setPackages] = useState<PackageType[]>([
-    { id: '1', name: 'Standard Carton', dimensions: { length: 40, width: 30, height: 30 }, quantity: 0, color: PALETTE[0] }
+    { id: '1', name: 'Standard Carton', dimensions: { length: 40, width: 30, height: 30 }, quantity: 0, color: PALETTE[0], keepUpright: false }
   ]);
   
   // Form State
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [newPkg, setNewPkg] = useState({ length: '40', width: '30', height: '30', qty: '', name: '' });
+  const [newPkg, setNewPkg] = useState({ 
+      length: '40', width: '30', height: '30', qty: '', name: '', keepUpright: false 
+  });
   const [pkgUnit, setPkgUnit] = useState<Unit>('cm');
 
   const convertToCm = (val: number, unit: Unit) => {
@@ -42,6 +44,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
     if (unit === 'in') return parseFloat((val / 2.54).toFixed(2));
     return parseFloat(val.toFixed(2));
   }
+
+  // PRESET LOGIC
+  const applyPreset = (type: '20' | '40' | '40hc') => {
+      setContainerUnit('m');
+      if (type === '20') setContainer({ length: '5.90', width: '2.35', height: '2.39' });
+      if (type === '40') setContainer({ length: '12.03', width: '2.35', height: '2.39' });
+      if (type === '40hc') setContainer({ length: '12.03', width: '2.35', height: '2.69' });
+  };
 
   const handleSavePackage = () => {
     const l = parseFloat(newPkg.length);
@@ -65,7 +75,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                     ...p,
                     name: newPkg.name.trim() || p.name,
                     dimensions: dimsInCm,
-                    quantity: q
+                    quantity: q,
+                    keepUpright: newPkg.keepUpright
                 };
             }
             return p;
@@ -84,12 +95,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
             name: name,
             dimensions: dimsInCm,
             quantity: q, 
-            color: color
+            color: color,
+            keepUpright: newPkg.keepUpright
         }]);
     }
 
     // Reset Form
-    setNewPkg({ length: '40', width: '30', height: '30', qty: '', name: '' });
+    setNewPkg({ length: '40', width: '30', height: '30', qty: '', name: '', keepUpright: false });
   };
 
   const handleEditPackage = (pkg: PackageType) => {
@@ -99,13 +111,14 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
         width: convertFromCm(pkg.dimensions.width, pkgUnit).toString(),
         height: convertFromCm(pkg.dimensions.height, pkgUnit).toString(),
         qty: (pkg.quantity === 0 || pkg.quantity === undefined) ? '' : pkg.quantity.toString(),
-        name: pkg.name
+        name: pkg.name,
+        keepUpright: !!pkg.keepUpright
     });
   };
 
   const handleCancelEdit = () => {
       setEditingId(null);
-      setNewPkg({ length: '40', width: '30', height: '30', qty: '', name: '' });
+      setNewPkg({ length: '40', width: '30', height: '30', qty: '', name: '', keepUpright: false });
   };
 
   const handleRemovePackage = (id: string) => {
@@ -130,8 +143,22 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
     <>
     <div className="bg-white flex flex-col h-full border-r border-slate-200 shadow-xl z-20 w-full">
       <div className="p-5 border-b border-slate-100 bg-slate-50">
-        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">1. Container Dimensions</h2>
-        <div className="flex items-center gap-2 mt-3">
+        <div className="flex justify-between items-center mb-3">
+             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">1. Container</h2>
+             <div className="flex gap-1">
+                <button onClick={() => applyPreset('20')} className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-slate-100 hover:text-brand-600 transition-colors text-slate-500">
+                    20' Std
+                </button>
+                <button onClick={() => applyPreset('40')} className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-slate-100 hover:text-brand-600 transition-colors text-slate-500">
+                    40' Std
+                </button>
+                <button onClick={() => applyPreset('40hc')} className="px-2 py-1 text-[10px] font-bold bg-white border border-slate-200 rounded hover:bg-slate-100 hover:text-brand-600 transition-colors text-slate-500">
+                    40' HC
+                </button>
+             </div>
+        </div>
+
+        <div className="flex items-center gap-2">
              <div className="flex-1">
                 <label className="text-xs text-slate-500 block mb-1 font-bold">Depth</label>
                 <input type="number" value={container.length} onChange={e => setContainer({...container, length: e.target.value})} className="w-full bg-white border border-slate-200 rounded p-2 text-sm font-medium focus:ring-2 ring-brand-500 outline-none" />
@@ -182,7 +209,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                      </select>
                 </div>
              </div>
-             <div className="flex items-end gap-2">
+             
+             {/* --- NEW: QTY + KEEP UPRIGHT ROW --- */}
+             <div className="flex items-end gap-3 mb-1">
                 <div className="flex-1">
                     <label className="text-[10px] uppercase text-slate-400 font-bold">Qty (Optional)</label>
                     <input 
@@ -193,18 +222,32 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                         className="w-full border border-slate-200 rounded p-2 text-sm placeholder:text-slate-300" 
                     />
                 </div>
+                <div className="flex items-center h-10 pb-1">
+                     <label className="flex items-center gap-2 cursor-pointer select-none">
+                         <input 
+                            type="checkbox" 
+                            checked={newPkg.keepUpright}
+                            onChange={e => setNewPkg({...newPkg, keepUpright: e.target.checked})}
+                            className="w-4 h-4 text-brand-600 rounded focus:ring-brand-500 border-gray-300"
+                         />
+                         <span className="text-xs font-bold text-slate-600">Keep Upright</span>
+                     </label>
+                </div>
+             </div>
+
+             <div className="flex justify-end mt-3">
                 {editingId ? (
-                    <div className="flex gap-1">
-                        <button onClick={handleCancelEdit} className="bg-slate-200 text-slate-600 rounded-lg px-3 py-2 text-sm font-bold hover:bg-slate-300">
+                    <div className="flex gap-1 w-full">
+                        <button onClick={handleCancelEdit} className="flex-1 bg-slate-200 text-slate-600 rounded-lg py-2 text-sm font-bold hover:bg-slate-300">
                             Cancel
                         </button>
-                        <button onClick={handleSavePackage} className="bg-amber-500 text-white rounded-lg px-3 py-2 text-sm font-bold hover:bg-amber-600 shadow-sm">
+                        <button onClick={handleSavePackage} className="flex-1 bg-amber-500 text-white rounded-lg py-2 text-sm font-bold hover:bg-amber-600 shadow-sm">
                             Update
                         </button>
                     </div>
                 ) : (
-                    <button onClick={handleSavePackage} className="bg-brand-600 text-white rounded-lg px-4 py-2 text-sm font-bold hover:bg-brand-500 shadow-md shadow-brand-200 active:scale-95 transition-all">
-                        + Add
+                    <button onClick={handleSavePackage} className="w-full bg-brand-600 text-white rounded-lg py-2 text-sm font-bold hover:bg-brand-500 shadow-md shadow-brand-200 active:scale-95 transition-all">
+                        + Add Item
                     </button>
                 )}
              </div>
@@ -216,7 +259,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                 <div key={p.id} className={`flex items-center justify-between bg-white border p-3 rounded-lg shadow-sm hover:shadow-md transition-shadow
                     ${editingId === p.id ? 'border-amber-400 ring-1 ring-amber-400 bg-amber-50' : 'border-slate-200'}`}>
                     <div className="flex items-center gap-3">
-                        {/* Colored Icon */}
                         <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0" style={{ backgroundColor: p.color }}>
                            Box
                         </div>
@@ -224,6 +266,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                             <div className="font-bold text-sm text-slate-800 leading-tight truncate">{p.name}</div>
                             <div className="text-[10px] text-slate-500 mt-0.5">
                                 {p.dimensions.length}x{p.dimensions.width}x{p.dimensions.height}
+                                {p.keepUpright && <span className="ml-2 text-brand-600 font-bold bg-brand-50 px-1 rounded">↑ Upright</span>}
                             </div>
                             <div className="flex gap-2 mt-1">
                                 <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
@@ -241,14 +284,10 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ onCalculate, isGenerating, 
                     </div>
                     <div className="flex items-center">
                         <button onClick={() => handleEditPackage(p)} className="text-slate-400 hover:text-amber-500 p-2" title="Edit Item">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                            </svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
                         </button>
                         <button onClick={() => handleRemovePackage(p.id)} className="text-slate-400 hover:text-red-500 p-2" title="Remove Item">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                         </button>
                     </div>
                 </div>

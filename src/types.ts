@@ -1,41 +1,48 @@
-export type Unit = 'm' | 'cm' | 'mm' | 'in' | 'ft';
+export type Unit = 'm' | 'cm' | 'ft' | 'in';
 
 export interface Dimensions {
-  length: number; // Depth
-  width: number;  // Side-to-side
-  height: number; // Vertical
+  length: number;
+  width: number;
+  height: number;
 }
 
 export interface PackageType {
   id: string;
   name: string;
   dimensions: Dimensions;
-  quantity?: number; // Optional. If undefined/0, assume infinite/fill mode.
+  quantity?: number; // 0 or undefined means "Infinite/Fill"
   color: string;
+  keepUpright?: boolean; // <--- NEW FIELD
+}
+
+export interface Container {
+  length: number;
+  width: number;
+  height: number;
+}
+
+export interface PackingInput {
+  container: Container;
+  packages: PackageType[];
 }
 
 export interface PlacedItem {
   x: number;
   y: number;
   z: number;
-  width: number;  // dimension along x
-  height: number; // dimension along y
-  length: number; // dimension along z
+  width: number;
+  height: number;
+  length: number;
   packageId: string;
   color: string;
   label: string;
 }
 
 export interface PackingResult {
-  containerDimensions: Dimensions;
+  containerDimensions: Container;
   placedItems: PlacedItem[];
-  unplacedItems: PackageType[];
+  unplacedItems: PackageType[]; 
   volumeUtilization: number;
   totalItemsPacked: number;
-  layers: number[]; // Unique Z coordinates
-}
-
-export interface PackingInput {
-  container: Dimensions;
-  packages: PackageType[];
+  layers: number[];
 }
