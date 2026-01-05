@@ -1,210 +1,250 @@
-import { PackageType, PackingInput, PackingResult, PlacedItem } from '../types';
+import { PackageType, PackingInput, PackingResult, PlacedItem, Dimensions } from '../types';
 
-// --- CORE PACKING ENGINE ---
-// This calculates a single layout based on a specific list order
-const runSimulation = (container: any, itemsToPack: { type: PackageType, id: string, vol: number }[]) => {
-    // Clone the list so we don't mess up the original order for other strategies
-    const queue = [...itemsToPack];
-    
-    const placedItems: PlacedItem[] = [];
-    
-    // Coordinate system: x=Width, y=Height, z=Depth
-    // Anchors are "candidate spots" where a box corner could go.
-    // We sort them to prefer: Back (Z) -> Bottom (Y) -> Left (X)
-    let anchors: {x: number, y: number, z: number}[] = [{ x: 0, y: 0, z: 0 }];
-    
-    const tryPlaceItem = (anchor: {x: number, y: number, z: number}, type: PackageType): PlacedItem | null => {
-        const { length: L, width: W, height: H } = type.dimensions;
-        
-        // Define all 6 possible orientations
-        // l = dimension along Z (depth)
-        // w = dimension along X (width)
-        // h = dimension along Y (height)
-        const allOrientations = [
-            { l: L, w: W, h: H }, // Standard
-            { l: W, w: L, h: H }, // Flat Rotated
-            { l: L, w: H, h: W }, // On Side
-            { l: W, w: H, h: L }, // On Side Rotated
-            { l: H, w: W, h: L }, // Upright
-            { l: H, w: L, h: W }, // Upright Rotated
-        ];
+// --- TYPES ---
+interface ItemToPack {
+  type: PackageType;
+  id: string;
+  vol: number;
+}
 
-        // --- CONSTRAINT LOGIC ---
-        // If keepUpright is true, we ONLY allow orientations where the resulting height (h) 
-        // matches the package's original height (H).
-        const allowedOrientations = type.keepUpright 
-            ? allOrientations.filter(o => Math.abs(o.h - H) < 0.1) 
-            : allOrientations;
+interface Anchor {
+  x: number;
+  y: number;
+  z: number;
+}
 
-        for (const orient of allowedOrientations) {
-             // 1. Container Bounds Check
-             if (anchor.x + orient.w > container.width) continue;
-             if (anchor.y + orient.h > container.height) continue;
-             if (anchor.z + orient.l > container.length) continue;
+// --- HELPER FUNCTIONS ---
 
-             // 2. Collision Check against already placed items
-             let overlap = false;
-             for (const p of placedItems) {
-                if (
-                    anchor.x < p.x + p.width && anchor.x + orient.w > p.x &&
-                    anchor.y < p.y + p.height && anchor.y + orient.h > p.y &&
-                    anchor.z < p.z + p.length && anchor.z + orient.l > p.z
-                ) {
-                    overlap = true;
-                    break;
-                }
-             }
+const shuffle = <T>(array: T[]): T[] => {
+    const newArr = [...array];
+    for (let i = newArr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+    }
+    return newArr;
+};
 
-             if (!overlap) {
-                 return {
-                     x: anchor.x,
-                     y: anchor.y,
-                     z: anchor.z,
-                     width: orient.w,
-                     height: orient.h,
-                     length: orient.l,
-                     packageId: type.id,
-                     color: type.color,
-                     label: type.name
-                 };
-             }
+const mutate = (dna: ItemToPack[]): ItemToPack[] => {
+    const newDna = [...dna];
+    if (newDna.length < 2) return newDna;
+    const a = Math.floor(Math.random() * newDna.length);
+    const b = Math.floor(Math.random() * newDna.length);
+    [newDna[a], newDna[b]] = [newDna[b], newDna[a]];
+    return newDna;
+};
+
+const breed = (parent1: ItemToPack[], parent2: ItemToPack[]): ItemToPack[] => {
+    const cut = Math.floor(parent1.length / 2);
+    const child = parent1.slice(0, cut);
+    const existingIds = new Set(child.map(i => i.id));
+    for (const gene of parent2) {
+        if (!existingIds.has(gene.id)) {
+            child.push(gene);
         }
-        return null;
-    };
+    }
+    return child;
+};
 
-    // The Loop: Keep going until we run out of anchors or items
-    // Safety break to prevent browser freezing on massive lists
-    let safety = 0;
-    while (anchors.length > 0 && queue.length > 0 && safety < 5000) {
-        safety++;
-        
-        // Critical: Sort anchors to ensure we fill Back-to-Front (Z), Bottom-to-Top (Y)
+const getOrientations = (pkg: PackageType): Dimensions[] => {
+    const { length: l, width: w, height: h } = pkg.dimensions;
+    const all = [
+        { length: l, width: w, height: h },
+        { length: w, width: l, height: h },
+        { length: l, width: h, height: w },
+        { length: h, width: l, height: w },
+        { length: w, width: h, height: l },
+        { length: h, width: w, height: l },
+    ];
+    let allowed = pkg.keepUpright 
+        ? all.filter(o => Math.abs(o.height - h) < 0.1) 
+        : all;
+    
+    const unique: Dimensions[] = [];
+    const seen = new Set<string>();
+    allowed.forEach(opt => {
+        const key = `${opt.length}-${opt.width}-${opt.height}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(opt);
+        }
+    });
+    return unique;
+};
+
+// --- CORE SIMULATION ENGINE ---
+const runSimulation = (container: any, itemsToPack: ItemToPack[]): PlacedItem[] => {
+    const placedItems: PlacedItem[] = [];
+    let anchors: Anchor[] = [{ x: 0, y: 0, z: 0 }];
+    let safetyCounter = 0;
+    const queue = [...itemsToPack];
+
+    while (anchors.length > 0 && queue.length > 0 && safetyCounter < 5000) {
+        safetyCounter++;
         anchors.sort((a, b) => {
-            if (Math.abs(a.z - b.z) > 0.1) return a.z - b.z; // Deepest first
-            if (Math.abs(a.y - b.y) > 0.1) return a.y - b.y; // Lowest first
-            return a.x - b.x; // Leftmost first
+            if (Math.abs(a.z - b.z) > 0.1) return a.z - b.z;
+            if (Math.abs(a.y - b.y) > 0.1) return a.y - b.y;
+            return a.x - b.x;
         });
 
         const currentAnchor = anchors[0];
-        let placed: PlacedItem | null = null;
-        let placedIndex = -1;
+        let bestItemIndex = -1;
+        let bestOrientation: Dimensions | null = null;
 
-        // Try to find the FIRST item in our queue that fits this anchor
-        // (The intelligence comes from how we SORTED the queue before calling this function)
         for (let i = 0; i < queue.length; i++) {
-            placed = tryPlaceItem(currentAnchor, queue[i].type);
-            if (placed) {
-                placedIndex = i;
-                break; // Found one!
+            const item = queue[i];
+            const orientations = getOrientations(item.type);
+            for (const orient of orientations) {
+                if (currentAnchor.x + orient.width > container.width) continue;
+                if (currentAnchor.y + orient.height > container.height) continue;
+                if (currentAnchor.z + orient.length > container.length) continue;
+
+                let intersects = false;
+                for (const p of placedItems) {
+                    if (
+                        currentAnchor.x < p.x + p.width && currentAnchor.x + orient.width > p.x &&
+                        currentAnchor.y < p.y + p.height && currentAnchor.y + orient.height > p.y &&
+                        currentAnchor.z < p.z + p.length && currentAnchor.z + orient.length > p.z
+                    ) {
+                        intersects = true;
+                        break;
+                    }
+                }
+                if (!intersects) {
+                    bestItemIndex = i;
+                    bestOrientation = orient;
+                    break; 
+                }
             }
+            if (bestItemIndex !== -1) break; 
         }
 
-        if (placed) {
-            placedItems.push(placed);
-            queue.splice(placedIndex, 1); // Remove from to-do list
-
-            // Consume the anchor we just used
+        if (bestItemIndex !== -1 && bestOrientation) {
+            const itemToPlace = queue[bestItemIndex];
+            placedItems.push({
+                x: currentAnchor.x,
+                y: currentAnchor.y,
+                z: currentAnchor.z,
+                width: bestOrientation.width,
+                height: bestOrientation.height,
+                length: bestOrientation.length,
+                packageId: itemToPlace.id,
+                color: itemToPlace.type.color,
+                label: itemToPlace.type.name
+            });
+            queue.splice(bestItemIndex, 1);
             anchors.shift();
-
-            // Add new candidate anchors generated by this box
-            // 1. On Top
-            anchors.push({ x: placed.x, y: placed.y + placed.height, z: placed.z });
-            // 2. To Right
-            anchors.push({ x: placed.x + placed.width, y: placed.y, z: placed.z });
-            // 3. In Front
-            anchors.push({ x: placed.x, y: placed.y, z: placed.z + placed.length });
+            anchors.push({ x: currentAnchor.x, y: currentAnchor.y + bestOrientation.height, z: currentAnchor.z });
+            anchors.push({ x: currentAnchor.x + bestOrientation.width, y: currentAnchor.y, z: currentAnchor.z });
+            anchors.push({ x: currentAnchor.x, y: currentAnchor.y, z: currentAnchor.z + bestOrientation.length });
         } else {
-            // Nothing fits here (too small gap). Discard anchor.
             anchors.shift();
         }
     }
-
     return placedItems;
 };
 
-
-// --- MAIN CALCULATOR ---
-export const calculatePacking = (input: PackingInput): PackingResult => {
+// --- MAIN SERVICE EXPORT ---
+export const calculatePacking = async (
+    input: PackingInput, 
+    onProgress?: (msg: string) => void
+): Promise<PackingResult> => {
+    
   const container = input.container;
-  
-  // 1. Expand Inputs into a flat list of items
-  // We treat "infinite" items (quantity=0) as "just a lot of them" (e.g. 200) 
-  let allItems: { type: PackageType, id: string, vol: number, maxDim: number, area: number }[] = [];
+  let allItems: ItemToPack[] = [];
 
+  // Expand input
   input.packages.forEach(pkg => {
-    const count = (!pkg.quantity || pkg.quantity === 0) ? 200 : pkg.quantity; 
+    const count = (!pkg.quantity || pkg.quantity === 0) ? 100 : pkg.quantity; 
     const vol = pkg.dimensions.length * pkg.dimensions.width * pkg.dimensions.height;
-    const area = pkg.dimensions.width * pkg.dimensions.height; // Face area
-    const maxDim = Math.max(pkg.dimensions.length, pkg.dimensions.width, pkg.dimensions.height);
-
     for (let i = 0; i < count; i++) {
-      allItems.push({
-        type: pkg,
-        id: `${pkg.id}-${i}`,
-        vol,
-        maxDim,
-        area
-      });
+      allItems.push({ type: pkg, id: `${pkg.id}-${i}`, vol });
     }
   });
 
-  // Limit total items to prevent browser crash if user types 100,000
-  if (allItems.length > 2000) allItems = allItems.slice(0, 2000);
+  if (allItems.length > 600) allItems = allItems.slice(0, 600);
 
-  // --- THE "META" STRATEGY: COMPETITIVE SIMULATION ---
-  // We will run the packing engine multiple times with different sorting strategies
-  // and pick the one that results in the highest volume utilization.
+  const POPULATION_SIZE = 12; 
+  const GENERATIONS = 8;     
+  const SURVIVORS = 4;        
 
-  const strategies = [
-      // 1. Volume Descending (Classic Greedy)
-      (list: typeof allItems) => [...list].sort((a, b) => b.vol - a.vol),
-      
-      // 2. Max Dimension Descending (Good for long poles/pipes)
-      (list: typeof allItems) => [...list].sort((a, b) => b.maxDim - a.maxDim),
-      
-      // 3. Footprint/Area Descending (Good for pallets)
-      (list: typeof allItems) => [...list].sort((a, b) => b.area - a.area),
-      
-      // 4. Width Descending (Tries to fill rows)
-      (list: typeof allItems) => [...list].sort((a, b) => b.type.dimensions.width - a.type.dimensions.width),
-  ];
-
-  // Add 5 Random Shuffles (Monte Carlo) to break out of local optimums
-  // "Random" often beats logic in packing irregular shapes.
-  for(let i=0; i<5; i++) {
-      strategies.push((list) => [...list].sort(() => Math.random() - 0.5));
+  let population: ItemToPack[][] = [];
+  
+  // Seed Population
+  population.push([...allItems].sort((a, b) => b.vol - a.vol));
+  population.push([...allItems].sort((a, b) => {
+      const maxA = Math.max(a.type.dimensions.length, a.type.dimensions.width);
+      const maxB = Math.max(b.type.dimensions.length, b.type.dimensions.width);
+      return maxB - maxA;
+  }));
+  while (population.length < POPULATION_SIZE) {
+      population.push(shuffle(allItems));
   }
 
   let bestResult: PlacedItem[] = [];
   let maxVolumeFound = -1;
 
-  // Run the competition
-  strategies.forEach((strategy) => {
-      const sortedList = strategy(allItems);
-      const result = runSimulation(container, sortedList);
-      
-      const currentVol = result.reduce((acc, item) => acc + (item.width * item.height * item.length), 0);
-      
-      if (currentVol > maxVolumeFound) {
-          maxVolumeFound = currentVol;
-          bestResult = result;
+  for (let gen = 0; gen < GENERATIONS; gen++) {
+      if (onProgress) onProgress(`Running Simulation... Generation ${gen + 1}/${GENERATIONS}`);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const results = population.map(dna => {
+          const placed = runSimulation(container, dna);
+          const vol = placed.reduce((acc, i) => acc + (i.width * i.height * i.length), 0);
+          return { dna, placed, vol };
+      });
+
+      results.sort((a, b) => b.vol - a.vol);
+
+      if (results[0].vol > maxVolumeFound) {
+          maxVolumeFound = results[0].vol;
+          bestResult = results[0].placed;
+      }
+
+      const survivors = results.slice(0, SURVIVORS).map(r => r.dna);
+      const nextGen = [...survivors];
+
+      while (nextGen.length < POPULATION_SIZE) {
+          const p1 = survivors[Math.floor(Math.random() * survivors.length)];
+          const p2 = survivors[Math.floor(Math.random() * survivors.length)];
+          let child = breed(p1, p2);
+          if (Math.random() < 0.15) child = mutate(child);
+          nextGen.push(child);
+      }
+      population = nextGen;
+  }
+
+  // --- CALCULATE UNPLACED ITEMS (Shortfall) ---
+  const placedIds = new Set(bestResult.map(p => p.packageId));
+  const unplacedMap = new Map<string, PackageType>();
+
+  allItems.forEach(item => {
+      if (!placedIds.has(item.id)) {
+          // This specific item ID was not packed
+          // We group unplaced items by their original PackageType ID to get a count
+          const originalId = item.type.id;
+          const current = unplacedMap.get(originalId);
+          if (current) {
+              unplacedMap.set(originalId, { ...current, quantity: (current.quantity || 0) + 1 });
+          } else {
+              unplacedMap.set(originalId, { ...item.type, quantity: 1 });
+          }
       }
   });
 
-  // --- FINALIZE ---
-  const totalContainerVol = container.length * container.width * container.height;
-  const usedVol = bestResult.reduce((acc, item) => acc + (item.width * item.height * item.length), 0);
-  
-  // Calculate Layers for Visualization
-  // We round Z to 1 decimal to group items that are essentially on the same "face"
-  const uniqueZ = Array.from(new Set(bestResult.map(p => parseFloat(p.z.toFixed(1))))).sort((a, b) => a - b);
+  const unplacedItems = Array.from(unplacedMap.values());
+
+  const containerVol = container.length * container.width * container.height;
+  const uniqueZ = new Set<number>();
+  uniqueZ.add(0);
+  bestResult.forEach(item => uniqueZ.add(parseFloat(item.z.toFixed(1))));
+  const sortedLayers = Array.from(uniqueZ).sort((a, b) => a - b);
 
   return {
     containerDimensions: container,
     placedItems: bestResult,
-    unplacedItems: [], 
-    volumeUtilization: totalContainerVol > 0 ? (usedVol / totalContainerVol) * 100 : 0,
+    unplacedItems: unplacedItems, // Now accurately populated
+    volumeUtilization: containerVol > 0 ? (maxVolumeFound / containerVol) * 100 : 0,
     totalItemsPacked: bestResult.length,
-    layers: uniqueZ
+    layers: sortedLayers
   };
 };

@@ -31,7 +31,7 @@ const getOrientations = (pkg: PackageType) => {
 // --- HELPER: Stats Calculation ---
 interface PackageStats {
     count: number;
-    totalVolume: number; // Stored in cm3, converted to CBM in render
+    totalVolume: number; 
     percentOfContainer: number;
 }
 
@@ -39,17 +39,16 @@ interface PackageStats {
 const PDFExportTemplate = React.forwardRef<HTMLDivElement, { 
     data: PackingResult, 
     layerIndex: number, 
-    mode: 'cover' | 'guide' | 'layer',
+    mode: 'cover' | 'guide' | 'layer' | 'summary',
     guidePackage?: PackageType,
     stats?: Map<string, PackageStats>
 }>(({ data, layerIndex, mode, guidePackage, stats }, ref) => {
     
-    // Calculate Container CBM
     const containerVolCm3 = data.containerDimensions.length * data.containerDimensions.width * data.containerDimensions.height;
     const containerCBM = (containerVolCm3 / 1000000).toFixed(3);
 
-    // Unique Items for the Cover Legend
-    const uniqueItems = useMemo(() => {
+    // Identify unique items based on what was PLACED
+    const uniquePlacedItems = useMemo(() => {
         const map = new Map();
         data.placedItems.forEach(item => {
             const key = `${item.label}-${item.color}`;
@@ -62,6 +61,55 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
         });
         return Array.from(map.values());
     }, [data, stats]);
+
+    // NEW: Calculate Final Manifest (Placed + Unplaced = Total Original)
+    const finalManifest = useMemo(() => {
+        const manifest = new Map<string, { 
+            name: string, 
+            color: string, 
+            loaded: number, 
+            remaining: number, 
+            total: number,
+            dims: string 
+        }>();
+
+        // Count Loaded
+        data.placedItems.forEach(item => {
+            // Note: We use label as key, assuming unique names. Ideally use ID.
+            const key = item.label; 
+            const entry = manifest.get(key) || { 
+                name: item.label, 
+                color: item.color, 
+                loaded: 0, 
+                remaining: 0, 
+                total: 0,
+                dims: `${Math.round(item.length)}x${Math.round(item.width)}x${Math.round(item.height)}`
+            };
+            entry.loaded++;
+            entry.total++;
+            manifest.set(key, entry);
+        });
+
+        // Count Remaining
+        data.unplacedItems.forEach(item => {
+            const key = item.name;
+            const entry = manifest.get(key) || { 
+                name: item.name, 
+                color: item.color, 
+                loaded: 0, 
+                remaining: 0, 
+                total: 0,
+                dims: `${item.dimensions.length}x${item.dimensions.width}x${item.dimensions.height}`
+            };
+            // unplacedItems are aggregated by service now, so quantity represents count
+            const qty = item.quantity || 1;
+            entry.remaining += qty;
+            entry.total += qty;
+            manifest.set(key, entry);
+        });
+
+        return Array.from(manifest.values());
+    }, [data]);
 
     const currentZ = data.layers[layerIndex] || 0;
     
@@ -82,6 +130,7 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                 </div>
                 <div className="text-right">
                      {mode === 'cover' && <span className="text-2xl font-bold">Overview</span>}
+                     {mode === 'summary' && <span className="text-2xl font-bold text-amber-400">Shortfall Report</span>}
                      {mode === 'guide' && <span className="text-2xl font-bold">Package Reference</span>}
                      {mode === 'layer' && <span className="text-2xl font-bold">Step {layerIndex + 1}</span>}
                 </div>
@@ -90,7 +139,6 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
             {/* --- MODE: COVER PAGE --- */}
             {mode === 'cover' && (
                 <div className="flex-1 p-8 flex flex-col gap-6 bg-slate-50 overflow-hidden">
-                    
                     {/* Summary Card */}
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center shrink-0">
                         <div>
@@ -107,7 +155,7 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                         <div className="flex gap-12 text-right">
                             <div>
                                 <div className="text-4xl font-black text-slate-800">{data.totalItemsPacked}</div>
-                                <div className="text-xs text-slate-400 font-bold uppercase">Total Boxes</div>
+                                <div className="text-xs text-slate-400 font-bold uppercase">Boxes Loaded</div>
                             </div>
                             <div>
                                 <div className="text-4xl font-black text-brand-600">{Math.round(data.volumeUtilization)}%</div>
@@ -128,43 +176,34 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                                 </div>
                                 <div className="bg-slate-800 text-white py-1.5 rounded font-bold text-[10px]">BACK WALL (START)</div>
                             </div>
-                            <p className="mt-4 text-slate-500 text-xs px-4">
-                                Start loading from Depth 0 (Back Wall) towards the doors.
-                            </p>
                          </div>
 
-                         {/* Cargo Types Table */}
+                         {/* Loaded Items Table */}
                          <div className="col-span-8 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
-                            <h3 className="text-lg font-bold mb-4 text-slate-800">2. Cargo Manifest</h3>
+                            <h3 className="text-lg font-bold mb-4 text-slate-800">2. Loaded Cargo (Success)</h3>
                             <div className="flex-1 overflow-hidden">
                                 <table className="w-full text-sm text-left">
                                     <thead className="text-xs text-slate-400 uppercase bg-slate-50 sticky top-0">
                                         <tr>
                                             <th className="px-4 py-3 rounded-l-lg">Type</th>
-                                            <th className="px-4 py-3">Dimensions (cm)</th>
-                                            <th className="px-4 py-3">Qty</th>
+                                            <th className="px-4 py-3">Packed Qty</th>
                                             <th className="px-4 py-3 text-right">Vol (CBM)</th>
                                             <th className="px-4 py-3 rounded-r-lg text-right">% Load</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {uniqueItems.map((item, i) => (
+                                        {uniquePlacedItems.map((item, i) => (
                                             <tr key={i}>
                                                 <td className="px-4 py-3 font-bold text-slate-700 flex items-center gap-2">
                                                     <div className="w-4 h-4 rounded shadow-sm shrink-0" style={{ backgroundColor: item.color }}></div>
                                                     {item.label}
                                                 </td>
-                                                <td className="px-4 py-3 text-slate-500 font-mono text-xs">
-                                                    {Math.round(item.width)}x{Math.round(item.height)}x{Math.round(item.length)}
-                                                </td>
                                                 <td className="px-4 py-3 font-bold text-slate-800">{item.stat.count}</td>
-                                                {/* CBM Calculation: cm3 / 1,000,000 */}
                                                 <td className="px-4 py-3 text-slate-600 text-right font-mono">
                                                     {(item.stat.totalVolume / 1000000).toFixed(3)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex items-center justify-end gap-2">
-                                                        <span className="text-xs font-bold">{item.stat.percentOfContainer.toFixed(1)}%</span>
                                                         <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                                             <div className="h-full bg-brand-500" style={{ width: `${item.stat.percentOfContainer}%` }}></div>
                                                         </div>
@@ -180,11 +219,81 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                 </div>
             )}
 
-            {/* --- MODE: GUIDE PAGE --- */}
+            {/* --- MODE: SUMMARY PAGE (NEW) --- */}
+            {mode === 'summary' && (
+                <div className="flex-1 p-8 bg-slate-50 flex flex-col gap-6">
+                    <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
+                        <div className="flex justify-between items-end mb-6">
+                            <div>
+                                <h2 className="text-2xl font-black text-slate-800">Final Manifest Verification</h2>
+                                <p className="text-slate-500 mt-1">Comparison of Requested Qty vs. Actual Loaded Qty</p>
+                            </div>
+                            {data.unplacedItems.length === 0 ? (
+                                <div className="px-4 py-2 bg-green-100 text-green-700 rounded-lg font-bold flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                    All Items Loaded
+                                </div>
+                            ) : (
+                                <div className="px-4 py-2 bg-red-100 text-red-700 rounded-lg font-bold flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                    Items Left Behind
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="overflow-hidden border border-slate-200 rounded-xl">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-100 text-slate-500 text-xs uppercase font-bold">
+                                    <tr>
+                                        <th className="px-6 py-4">Package Name</th>
+                                        <th className="px-6 py-4 text-center">Requested</th>
+                                        <th className="px-6 py-4 text-center">Loaded</th>
+                                        <th className="px-6 py-4 text-center text-red-600">Remaining</th>
+                                        <th className="px-6 py-4 text-right">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {finalManifest.map((item, idx) => (
+                                        <tr key={idx} className={item.remaining > 0 ? "bg-red-50/50" : "bg-white"}>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-4 h-4 rounded" style={{ backgroundColor: item.color }}></div>
+                                                    <span className="font-bold text-slate-700">{item.name}</span>
+                                                </div>
+                                                <div className="text-xs text-slate-400 pl-7 mt-0.5">{item.dims}</div>
+                                            </td>
+                                            <td className="px-6 py-4 text-center font-mono text-slate-600">{item.total}</td>
+                                            <td className="px-6 py-4 text-center font-mono font-bold text-slate-800">{item.loaded}</td>
+                                            <td className="px-6 py-4 text-center font-mono font-bold text-red-600">
+                                                {item.remaining > 0 ? `-${item.remaining}` : '-'}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                {item.remaining === 0 ? (
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                        Complete
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                        {Math.round((item.loaded/item.total)*100)}% Loaded
+                                                    </span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div className="mt-auto pt-6 text-slate-400 text-xs text-center italic">
+                            * Note: Remaining items did not fit due to volume or dimension constraints.
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- MODE: GUIDE & LAYER (Keep existing code) --- */}
             {mode === 'guide' && guidePackage && (
                 <div className="flex-1 p-6 bg-slate-50 flex flex-col overflow-hidden">
-                    
-                    {/* Header for Guide */}
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center mb-4 shrink-0">
                         <div className="flex items-center gap-4">
                             <div className="w-12 h-12 rounded-lg shadow-md" style={{ backgroundColor: guidePackage.color }}></div>
@@ -200,18 +309,8 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                                 </div>
                                 <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">Quantity</div>
                             </div>
-                            <div className="w-px h-8 bg-slate-200"></div>
-                            <div>
-                                <div className="text-2xl font-bold text-slate-800 leading-none">
-                                    {/* CBM conversion */}
-                                    {((stats?.get(`${guidePackage.name}-${guidePackage.color}`)?.totalVolume || 0) / 1000000).toFixed(3)}
-                                </div>
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">Total CBM</div>
-                            </div>
                         </div>
                     </div>
-
-                    {/* Grid of Orientations */}
                     <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-4 min-h-0">
                         {getOrientations(guidePackage).map((opt, idx) => (
                             <div key={idx} className="bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden shadow-sm">
@@ -222,7 +321,6 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                                     </span>
                                 </div>
                                 <div className="flex-1 p-2 flex flex-col items-center justify-center gap-2">
-                                    {/* 2D Representation */}
                                     <div 
                                         className="relative flex items-center justify-center border-2 border-slate-800 shadow-sm"
                                         style={{
@@ -247,7 +345,6 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                 </div>
             )}
 
-            {/* --- MODE: LAYER VIEW --- */}
             {mode === 'layer' && (
                 <div className="flex-1 flex flex-col relative bg-slate-100 overflow-hidden">
                     <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
@@ -310,7 +407,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
   
   const [scale, setScale] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportMode, setExportMode] = useState<'cover' | 'guide' | 'layer'>('cover');
+  const [exportMode, setExportMode] = useState<'cover' | 'guide' | 'layer' | 'summary'>('cover');
   const [exportLayerIndex, setExportLayerIndex] = useState(0);
   const [exportGuidePkg, setExportGuidePkg] = useState<PackageType | undefined>(undefined);
 
@@ -324,9 +421,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
       data.placedItems.forEach(item => {
           const key = `${item.label}-${item.color}`;
           const current = stats.get(key) || { count: 0, totalVolume: 0, percentOfContainer: 0 };
-          
           const vol = item.length * item.width * item.height;
-          
           stats.set(key, {
               count: current.count + 1,
               totalVolume: current.totalVolume + vol,
@@ -334,7 +429,6 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
           });
       });
 
-      // Finalize percents
       stats.forEach((val, key) => {
           val.percentOfContainer = (val.totalVolume / containerVol) * 100;
           stats.set(key, val);
@@ -383,7 +477,6 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
 
         // 2. GUIDE PAGES
         const uniqueKeys = Array.from(packageStats.keys());
-        
         for (const key of uniqueKeys) {
             const sampleItem = data.placedItems.find(p => `${p.label}-${p.color}` === key);
             if (!sampleItem) continue;
@@ -418,6 +511,15 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
                 const img = await toJpeg(exportRef.current, { quality: 0.8, pixelRatio: 1.5 });
                 pdf.addImage(img, 'JPEG', 0, 0, 1024, 768);
             }
+        }
+
+        // 4. SUMMARY PAGE (NEW)
+        setExportMode('summary');
+        await new Promise(r => setTimeout(r, 250));
+        if (exportRef.current) {
+            pdf.addPage([1024, 768], 'landscape');
+            const img = await toJpeg(exportRef.current, { quality: 0.8, pixelRatio: 1.5 });
+            pdf.addImage(img, 'JPEG', 0, 0, 1024, 768);
         }
 
         pdf.save('PackMaster-Plan.pdf');

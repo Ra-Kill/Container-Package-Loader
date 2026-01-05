@@ -7,57 +7,58 @@ import { OrientationGuide } from './components/OrientationGuide';
 
 const App: React.FC = () => {
   const [packingResult, setPackingResult] = useState<PackingResult | null>(null);
+  
+  // Loading State
   const [isProcessing, setIsProcessing] = useState(false);
-  // Mobile Tab State: 'setup' (Input) or 'view' (Visualizer)
-  const [mobileTab, setMobileTab] = useState<'setup' | 'view'>('setup');
+  const [progressMsg, setProgressMsg] = useState("Initializing...");
 
-  // NEW: State for the Guide and Reference to all packages
+  const [mobileTab, setMobileTab] = useState<'setup' | 'view'>('setup');
   const [viewingGuide, setViewingGuide] = useState<PackageType | null>(null);
   const [allPackages, setAllPackages] = useState<PackageType[]>([]);
 
   const handleCalculate = async (input: PackingInput) => {
     setIsProcessing(true);
-    
-    // Store the packages so we can look them up later when clicking a box
+    setProgressMsg("Preparing cargo...");
     setAllPackages(input.packages);
 
-    // Simulate async for UI feedback
-    setTimeout(() => {
-        try {
-            const result = calculatePacking(input);
-            setPackingResult(result);
-            setMobileTab('view'); // Auto-switch to view on mobile
-        } catch (e) {
-            console.error(e);
-            alert("Error calculating plan");
-        } finally {
-            setIsProcessing(false);
-        }
-    }, 100);
-  };
-
-  // NEW: Handle clicking a box in the Visualizer
-  const handleVisualizerClick = (packageId: string) => {
-    // Strip the "-x" suffix if we added one for finite items (e.g. "pkg1-0" -> "pkg1")
-    // Note: In your packingService, IDs might be "id-index". 
-    // We check exact match first, then base match.
-    const originalPkg = allPackages.find(p => p.id === packageId) 
-                     || allPackages.find(p => packageId.startsWith(p.id + '-'));
-
-    if (originalPkg) {
-        setViewingGuide(originalPkg);
+    try {
+        // We now await the result and pass a callback for progress updates
+        const result = await calculatePacking(input, (msg) => {
+            setProgressMsg(msg);
+        });
+        
+        setPackingResult(result);
+        setMobileTab('view'); 
+    } catch (e) {
+        console.error(e);
+        alert("Error calculating plan");
+    } finally {
+        setIsProcessing(false);
     }
   };
 
+  const handleVisualizerClick = (packageId: string) => {
+    const originalPkg = allPackages.find(p => p.id === packageId) 
+                     || allPackages.find(p => packageId.startsWith(p.id + '-'));
+    if (originalPkg) setViewingGuide(originalPkg);
+  };
+
   return (
-    // FIX 1: Changed h-screen to h-dvh (Dynamic Viewport Height) to fix mobile browser bar issue
-    <div className="h-dvh w-screen bg-slate-100 flex flex-col md:flex-row overflow-hidden font-sans text-slate-900">
+    <div className="h-dvh w-screen bg-slate-100 flex flex-col md:flex-row overflow-hidden font-sans text-slate-900 relative">
         
+        {/* --- LOADING OVERLAY --- */}
+        {isProcessing && (
+            <div className="absolute inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-in fade-in duration-200">
+                <div className="w-16 h-16 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <h2 className="text-xl font-bold tracking-tight">Optimizing Load Plan</h2>
+                <p className="text-slate-300 font-mono mt-2 text-sm">{progressMsg}</p>
+            </div>
+        )}
+
         {/* LEFT PANEL: INPUT / SETUP */}
         <div className={`w-full md:w-96 shrink-0 h-full md:border-r border-slate-200 bg-white flex flex-col z-20 transition-all
             ${mobileTab === 'setup' ? 'flex' : 'hidden md:flex'}`}>
             
-            {/* Mobile-only Header for Setup */}
             <div className="md:hidden h-14 shrink-0 border-b border-slate-100 flex items-center px-4 font-bold text-slate-800 bg-slate-50 justify-between">
                 <span className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -65,8 +66,6 @@ const App: React.FC = () => {
                 </span>
             </div>
 
-            {/* FIX 2: Wrapped ControlPanel in a scrollable div. 
-               This ensures the form scrolls INSIDE the screen, rather than pushing the bottom nav off. */}
             <div className="flex-1 overflow-y-auto">
                 <ControlPanel 
                     onCalculate={handleCalculate} 
@@ -121,7 +120,6 @@ const App: React.FC = () => {
             </button>
         </div>
 
-        {/* Global Modal Render */}
         {viewingGuide && (
             <OrientationGuide pkg={viewingGuide} onClose={() => setViewingGuide(null)} />
         )}
