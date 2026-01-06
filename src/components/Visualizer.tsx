@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { PackingResult, PlacedItem, Dimensions, PackageType } from '../types';
+import { PackingResult, PackageType } from '../types';
 import { toJpeg } from 'html-to-image';
 import jsPDF from 'jspdf';
 
@@ -36,18 +36,17 @@ interface PackageStats {
 }
 
 // --- PDF TEMPLATE COMPONENT ---
+// Used for Cover, Guide, and Summary pages (HTML -> Image)
 const PDFExportTemplate = React.forwardRef<HTMLDivElement, { 
     data: PackingResult, 
-    layerIndex: number, 
-    mode: 'cover' | 'guide' | 'layer' | 'summary',
+    mode: 'cover' | 'guide' | 'summary',
     guidePackage?: PackageType,
     stats?: Map<string, PackageStats>
-}>(({ data, layerIndex, mode, guidePackage, stats }, ref) => {
+}>(({ data, mode, guidePackage, stats }, ref) => {
     
     const containerVolCm3 = data.containerDimensions.length * data.containerDimensions.width * data.containerDimensions.height;
     const containerCBM = (containerVolCm3 / 1000000).toFixed(3);
 
-    // Identify unique items based on what was PLACED
     const uniquePlacedItems = useMemo(() => {
         const map = new Map();
         data.placedItems.forEach(item => {
@@ -62,7 +61,7 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
         return Array.from(map.values());
     }, [data, stats]);
 
-    // NEW: Calculate Final Manifest (Placed + Unplaced = Total Original)
+    // Calculate Final Manifest (Placed + Unplaced)
     const finalManifest = useMemo(() => {
         const manifest = new Map<string, { 
             name: string, 
@@ -73,16 +72,13 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
             dims: string 
         }>();
 
-        // Count Loaded
+        // 1. Add Placed Items
         data.placedItems.forEach(item => {
-            // Note: We use label as key, assuming unique names. Ideally use ID.
             const key = item.label; 
             const entry = manifest.get(key) || { 
                 name: item.label, 
                 color: item.color, 
-                loaded: 0, 
-                remaining: 0, 
-                total: 0,
+                loaded: 0, remaining: 0, total: 0,
                 dims: `${Math.round(item.length)}x${Math.round(item.width)}x${Math.round(item.height)}`
             };
             entry.loaded++;
@@ -90,18 +86,15 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
             manifest.set(key, entry);
         });
 
-        // Count Remaining
+        // 2. Add Unplaced Items
         data.unplacedItems.forEach(item => {
             const key = item.name;
             const entry = manifest.get(key) || { 
                 name: item.name, 
                 color: item.color, 
-                loaded: 0, 
-                remaining: 0, 
-                total: 0,
+                loaded: 0, remaining: 0, total: 0,
                 dims: `${item.dimensions.length}x${item.dimensions.width}x${item.dimensions.height}`
             };
-            // unplacedItems are aggregated by service now, so quantity represents count
             const qty = item.quantity || 1;
             entry.remaining += qty;
             entry.total += qty;
@@ -111,17 +104,10 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
         return Array.from(manifest.values());
     }, [data]);
 
-    const currentZ = data.layers[layerIndex] || 0;
-    
-    const activeItems = mode === 'layer' ? data.placedItems.filter(item => {
-        const epsilon = 0.5;
-        return item.z <= currentZ + epsilon && (item.z + item.length) > currentZ + epsilon;
-    }) : [];
-
     return (
         <div ref={ref} className="bg-white text-slate-900 font-sans relative overflow-hidden flex flex-col" style={{ width: '1024px', height: '768px' }}>
             
-            {/* --- HEADER (Common) --- */}
+            {/* HEADER */}
             <div className="bg-slate-900 text-white px-8 py-4 flex justify-between items-center shrink-0 h-20">
                 <div className="flex items-center gap-4">
                     <div className="text-3xl font-black tracking-tight">PackMaster 3D</div>
@@ -132,14 +118,12 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                      {mode === 'cover' && <span className="text-2xl font-bold">Overview</span>}
                      {mode === 'summary' && <span className="text-2xl font-bold text-amber-400">Shortfall Report</span>}
                      {mode === 'guide' && <span className="text-2xl font-bold">Package Reference</span>}
-                     {mode === 'layer' && <span className="text-2xl font-bold">Step {layerIndex + 1}</span>}
                 </div>
             </div>
 
-            {/* --- MODE: COVER PAGE --- */}
+            {/* COVER PAGE */}
             {mode === 'cover' && (
                 <div className="flex-1 p-8 flex flex-col gap-6 bg-slate-50 overflow-hidden">
-                    {/* Summary Card */}
                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center shrink-0">
                         <div>
                             <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Container Specs</div>
@@ -165,7 +149,6 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                     </div>
 
                     <div className="flex-1 grid grid-cols-12 gap-6 min-h-0">
-                         {/* Loading Strategy */}
                          <div className="col-span-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
                             <h3 className="text-lg font-bold mb-4 text-slate-800">1. Loading Direction</h3>
                             <div className="relative w-40 h-56 border-4 border-slate-800 rounded-xl bg-slate-50 flex flex-col p-3">
@@ -178,7 +161,6 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                             </div>
                          </div>
 
-                         {/* Loaded Items Table */}
                          <div className="col-span-8 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
                             <h3 className="text-lg font-bold mb-4 text-slate-800">2. Loaded Cargo (Success)</h3>
                             <div className="flex-1 overflow-hidden">
@@ -219,7 +201,7 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                 </div>
             )}
 
-            {/* --- MODE: SUMMARY PAGE (NEW) --- */}
+            {/* SUMMARY PAGE */}
             {mode === 'summary' && (
                 <div className="flex-1 p-8 bg-slate-50 flex flex-col gap-6">
                     <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm flex-1 flex flex-col">
@@ -283,15 +265,11 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                                 </tbody>
                             </table>
                         </div>
-                        
-                        <div className="mt-auto pt-6 text-slate-400 text-xs text-center italic">
-                            * Note: Remaining items did not fit due to volume or dimension constraints.
-                        </div>
                     </div>
                 </div>
             )}
 
-            {/* --- MODE: GUIDE & LAYER (Keep existing code) --- */}
+            {/* GUIDE PAGE */}
             {mode === 'guide' && guidePackage && (
                 <div className="flex-1 p-6 bg-slate-50 flex flex-col overflow-hidden">
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center mb-4 shrink-0">
@@ -344,58 +322,6 @@ const PDFExportTemplate = React.forwardRef<HTMLDivElement, {
                     </div>
                 </div>
             )}
-
-            {mode === 'layer' && (
-                <div className="flex-1 flex flex-col relative bg-slate-100 overflow-hidden">
-                    <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
-                         <div className="text-xs font-bold text-slate-400 uppercase">Current Depth</div>
-                         <div className="text-2xl font-black text-brand-600">{Math.round(currentZ)}cm</div>
-                    </div>
-
-                    <div className="flex-1 flex items-center justify-center p-4">
-                         <div className="relative border-4 border-slate-800 bg-white shadow-xl" 
-                             style={{
-                                 width: '850px',
-                                 height: `${850 * (data.containerDimensions.height / data.containerDimensions.width)}px`,
-                                 maxHeight: '580px'
-                             }}>
-                            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-
-                            {activeItems.map((item, i) => {
-                                const isNew = Math.abs(item.z - currentZ) < 0.5;
-                                return (
-                                    <div
-                                        key={i}
-                                        className="absolute flex items-center justify-center text-center overflow-hidden border border-slate-500"
-                                        style={{
-                                            left: `${(item.x / data.containerDimensions.width) * 100}%`,
-                                            bottom: `${(item.y / data.containerDimensions.height) * 100}%`,
-                                            width: `${(item.width / data.containerDimensions.width) * 100}%`,
-                                            height: `${(item.height / data.containerDimensions.height) * 100}%`,
-                                            backgroundColor: item.color,
-                                            opacity: isNew ? 1 : 0.15,
-                                            zIndex: isNew ? 10 : 0,
-                                            boxShadow: isNew ? 'inset 0 0 0 1px rgba(255,255,255,0.4)' : 'none'
-                                        }}
-                                    >
-                                        {isNew && (
-                                            <div className="flex flex-col items-center justify-center leading-none w-full h-full">
-                                                <span className="text-white font-bold drop-shadow-md text-lg">
-                                                    {Math.round(item.width)}x{Math.round(item.height)}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                    
-                    <div className="absolute bottom-3 right-6 bg-white px-3 py-1 rounded-full text-slate-400 font-mono text-xs border border-slate-200">
-                        Page {layerIndex + 2 + (stats ? stats.size : 0)}
-                    </div>
-                 </div>
-            )}
         </div>
     );
 });
@@ -407,8 +333,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
   
   const [scale, setScale] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportMode, setExportMode] = useState<'cover' | 'guide' | 'layer' | 'summary'>('cover');
-  const [exportLayerIndex, setExportLayerIndex] = useState(0);
+  const [exportMode, setExportMode] = useState<'cover' | 'guide' | 'summary'>('cover');
   const [exportGuidePkg, setExportGuidePkg] = useState<PackageType | undefined>(undefined);
 
   // --- STATISTICS CALCULATION ---
@@ -469,7 +394,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
 
         // 1. COVER PAGE
         setExportMode('cover');
-        await new Promise(r => setTimeout(r, 250)); 
+        await new Promise(r => setTimeout(r, 200)); 
         if (exportRef.current) {
             const img = await toJpeg(exportRef.current, { quality: 0.8, pixelRatio: 1.5 });
             pdf.addImage(img, 'JPEG', 0, 0, 1024, 768);
@@ -491,7 +416,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
 
             setExportMode('guide');
             setExportGuidePkg(guidePkg);
-            await new Promise(r => setTimeout(r, 200));
+            await new Promise(r => setTimeout(r, 100));
             
             if (exportRef.current) {
                 pdf.addPage([1024, 768], 'landscape');
@@ -500,22 +425,139 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
             }
         }
 
-        // 3. LAYER PAGES
-        setExportGuidePkg(undefined);
+        // 3. LAYER PAGES (NATIVE VECTOR DRAWING)
+        const { width: contW, height: contH } = data.containerDimensions;
+        
+        // --- LAYOUT & CENTERING CONSTANTS ---
+        const pageWidth = 1024;
+        const headerHeight = 160; 
+        const footerHeight = 50;
+        const availableW = pageWidth - 80; // 40px padding each side
+        const availableH = 768 - headerHeight - footerHeight;
+
+        // Calculate uniform scale
+        const scaleFactor = Math.min(availableW / contW, availableH / contH);
+        
+        const drawW = contW * scaleFactor;
+        const drawH = contH * scaleFactor;
+
+        // Exact Centering
+        const startX = (pageWidth - drawW) / 2;
+        const startY = headerHeight + (availableH - drawH) / 2;
+
         for (let i = 0; i < data.layers.length; i++) {
-            setExportMode('layer');
-            setExportLayerIndex(i);
-            await new Promise(r => setTimeout(r, 150));
-            if (exportRef.current) {
-                pdf.addPage([1024, 768], 'landscape');
-                const img = await toJpeg(exportRef.current, { quality: 0.8, pixelRatio: 1.5 });
-                pdf.addImage(img, 'JPEG', 0, 0, 1024, 768);
+            const currentZ = data.layers[i];
+            const epsilon = 0.5;
+            
+            const activeItems = data.placedItems.filter(item => 
+                item.z <= currentZ + epsilon && (item.z + item.length) > currentZ + epsilon
+            );
+
+            pdf.addPage([1024, 768], 'landscape');
+            
+            // Draw Header
+            pdf.setFillColor(25, 30, 40); 
+            pdf.rect(0, 0, 1024, 80, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(24);
+            pdf.setFont("helvetica", "bold");
+            pdf.text("PackMaster 3D", 40, 50);
+            pdf.setFontSize(16);
+            pdf.setFont("helvetica", "normal");
+            pdf.text("Load Plan Report", 250, 50);
+            pdf.setFontSize(24);
+            pdf.setFont("helvetica", "bold");
+            pdf.text(`Step ${i + 1}`, 900, 50);
+
+            // Draw Sub-header
+            pdf.setFillColor(248, 250, 252);
+            pdf.rect(0, 80, 1024, 60, 'F');
+            pdf.setTextColor(100, 116, 139);
+            pdf.setFontSize(10);
+            pdf.text("CURRENT DEPTH", 40, 105);
+            pdf.setTextColor(15, 23, 42);
+            pdf.setFontSize(24);
+            pdf.setFont("helvetica", "bold");
+            pdf.text(`${Math.round(currentZ)}cm`, 40, 130);
+
+            // Draw Container Border
+            pdf.setDrawColor(30, 41, 59);
+            pdf.setLineWidth(3);
+            pdf.setFillColor(255, 255, 255);
+            pdf.rect(startX, startY, drawW, drawH, 'FD');
+
+            // Draw Grid
+            pdf.setDrawColor(226, 232, 240);
+            pdf.setLineWidth(0.5);
+            for(let g=0; g<=10; g++) {
+                const x = startX + (g * (drawW/10));
+                pdf.line(x, startY, x, startY + drawH);
             }
+            for(let g=0; g<=10; g++) {
+                const y = startY + (g * (drawH/10));
+                pdf.line(startX, y, startX + drawW, y);
+            }
+
+            // Draw Items
+            activeItems.forEach(item => {
+                const isNew = Math.abs(item.z - currentZ) < 0.5;
+                
+                const itemX = startX + ((item.x / contW) * drawW);
+                const itemW = (item.width / contW) * drawW;
+                const itemH = (item.height / contH) * drawH;
+                const itemY = (startY + drawH) - ((item.y / contH) * drawH) - itemH;
+
+                const hex = item.color.replace('#', '');
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
+
+                // Shadows (Fake 3D Depth)
+                if (isNew) {
+                    pdf.setFillColor(200, 200, 200);
+                    pdf.setDrawColor(200, 200, 200);
+                    // Offset slightly for shadow effect
+                    pdf.rect(itemX + 2, itemY + 2, itemW, itemH, 'F');
+                }
+
+                if (isNew) {
+                    pdf.setFillColor(r, g, b);
+                    pdf.setDrawColor(255, 255, 255);
+                    pdf.setLineWidth(1);
+                } else {
+                    pdf.setFillColor(241, 245, 249);
+                    pdf.setDrawColor(r, g, b);
+                    pdf.setLineWidth(0.5);
+                }
+
+                pdf.rect(itemX, itemY, itemW, itemH, 'FD');
+
+                if (isNew) {
+                    const label = `${Math.round(item.width)}x${Math.round(item.height)}`;
+                    pdf.setFontSize(14); // Bigger Font
+                    pdf.setFont("helvetica", "bold");
+                    const textW = pdf.getTextWidth(label);
+                    
+                    // Center and check bounds
+                    if (textW < itemW) {
+                        // Text Shadow
+                        pdf.setTextColor(0,0,0);
+                        pdf.text(label, itemX + (itemW/2) - (textW/2) + 0.5, itemY + (itemH/2) + 5.5);
+                        // Main Text
+                        pdf.setTextColor(255,255,255);
+                        pdf.text(label, itemX + (itemW/2) - (textW/2), itemY + (itemH/2) + 5);
+                    }
+                }
+            });
+
+            pdf.setTextColor(148, 163, 184);
+            pdf.setFontSize(10);
+            pdf.text(`Page ${pdf.getNumberOfPages()}`, 950, 750);
         }
 
-        // 4. SUMMARY PAGE (NEW)
+        // 4. SUMMARY PAGE
         setExportMode('summary');
-        await new Promise(r => setTimeout(r, 250));
+        await new Promise(r => setTimeout(r, 200));
         if (exportRef.current) {
             pdf.addPage([1024, 768], 'landscape');
             const img = await toJpeg(exportRef.current, { quality: 0.8, pixelRatio: 1.5 });
@@ -530,7 +572,6 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
       } finally {
           setIsExporting(false);
           setExportMode('cover');
-          setExportLayerIndex(0);
       }
   };
 
@@ -604,7 +645,6 @@ const Visualizer: React.FC<VisualizerProps> = ({ data, onPackageClick }) => {
              <PDFExportTemplate 
                 ref={exportRef}
                 data={data}
-                layerIndex={exportLayerIndex}
                 mode={exportMode}
                 guidePackage={exportGuidePkg}
                 stats={packageStats}
